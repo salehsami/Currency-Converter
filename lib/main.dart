@@ -923,7 +923,7 @@ class MyApp extends StatelessWidget {
         primaryColor: const Color(0xFF162836),
         scaffoldBackgroundColor: Colors.white,
         appBarTheme: AppBarTheme(
-          color: const Color(0xFF387AAE),
+          backgroundColor: const Color(0xFF387AAE),
           shape: SemiCircleBottomShape(),
           elevation: 5,
           toolbarHeight: kToolbarHeight + 40,
@@ -955,52 +955,59 @@ class _MainScreenState extends State<MainScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Globe Max Currency Converter')),
       body: _screens[_selectedIndex],
-      bottomNavigationBar: Container(
-        height: 70,
-        decoration: BoxDecoration(
+      // ---- Recommended: SafeArea + rounded background without fixed height ----
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: ClipRRect(
           borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-          color: Colors.white,
-          boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 10)],
-        ),
-        child: BottomNavigationBar(
-          elevation: 0,
-          backgroundColor: Colors.transparent,
-          selectedLabelStyle: GoogleFonts.poppins(fontSize: 12),
-          unselectedLabelStyle: GoogleFonts.poppins(fontSize: 12),
-          currentIndex: _selectedIndex,
-          selectedItemColor: const Color(0xFF387AAE),
-          unselectedItemColor: Colors.grey,
-          items: [
-            BottomNavigationBarItem(
-              icon: Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color:
-                      _selectedIndex == 0
-                          ? const Color(0xFF387AAE).withOpacity(0.2)
-                          : Colors.transparent,
-                ),
-                child: const Icon(Icons.currency_exchange, size: 24),
-              ),
-              label: 'Convert',
+          child: Container(
+            // no fixed height here — let BottomNavigationBar size itself
+            decoration: BoxDecoration(
+              color: Colors.white,
+              boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 10)],
             ),
-            BottomNavigationBarItem(
-              icon: Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color:
-                      _selectedIndex == 1
-                          ? const Color(0xFF387AAE).withOpacity(0.2)
-                          : Colors.transparent,
+            child: BottomNavigationBar(
+              type: BottomNavigationBarType.fixed,
+              elevation: 0,
+              backgroundColor: Colors.white,
+              selectedLabelStyle: GoogleFonts.poppins(fontSize: 12),
+              unselectedLabelStyle: GoogleFonts.poppins(fontSize: 12),
+              currentIndex: _selectedIndex,
+              selectedItemColor: const Color(0xFF387AAE),
+              unselectedItemColor: Colors.grey,
+              items: [
+                BottomNavigationBarItem(
+                  icon: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color:
+                          _selectedIndex == 0
+                              ? const Color(0xFF387AAE).withOpacity(0.2)
+                              : Colors.transparent,
+                    ),
+                    child: const Icon(Icons.currency_exchange, size: 24),
+                  ),
+                  label: 'Convert',
                 ),
-                child: const Icon(Icons.assessment, size: 24),
-              ),
-              label: 'Rates',
+                BottomNavigationBarItem(
+                  icon: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color:
+                          _selectedIndex == 1
+                              ? const Color(0xFF387AAE).withOpacity(0.2)
+                              : Colors.transparent,
+                    ),
+                    child: const Icon(Icons.assessment, size: 24),
+                  ),
+                  label: 'Rates',
+                ),
+              ],
+              onTap: _onItemTapped,
             ),
-          ],
-          onTap: _onItemTapped,
+          ),
         ),
       ),
     );
@@ -1274,7 +1281,7 @@ class _ConverterScreenState extends State<ConverterScreen> {
         child: Column(
           children: [
             _buildCompactHeader(),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
             _buildSlimConverterCard(),
           ],
         ),
@@ -1350,22 +1357,23 @@ class _ConverterScreenState extends State<ConverterScreen> {
       padding: const EdgeInsets.all(16),
       child: Column(
         children: [
+          const SizedBox(height: 8),
           _buildCurrencyRow(
             title: "From",
             currency: _fromCurrency,
             onTap: () => _showCurrencyPicker(true), // Add this
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 20),
           _buildSwapButton(),
-          const SizedBox(height: 12),
+          const SizedBox(height: 18),
           _buildCurrencyRow(
             title: "To",
             currency: _toCurrency,
             onTap: () => _showCurrencyPicker(false), // Add this
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 20),
           _buildAmountInput(),
-          const SizedBox(height: 16),
+          const SizedBox(height: 18),
           _buildResultSection(), // Changed from _buildConversionResults
         ],
       ),
