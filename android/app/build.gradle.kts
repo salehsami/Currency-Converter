@@ -80,11 +80,11 @@ plugins {
 }
 
 android {
-    namespace = "com.example.currency_exchange"
+    namespace = "com.sas.currency_exchange"
     compileSdk = flutter.compileSdkVersion
 
     defaultConfig {
-        applicationId = "com.example.currency_exchange"
+        applicationId = "com.sas.currency_exchange"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
