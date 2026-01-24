@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:ui' as ui;
-import 'package:intl/intl.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class SemiCircleBottomShape extends ContinuousRectangleBorder {

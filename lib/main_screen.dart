@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'screens/home_screen.dart';
-import 'screens/currency_chart_screen.dart';
+import 'screens/charts_screen.dart';
 import 'screens/exchange_rates.dart';
+import 'screens/services_screen.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -18,11 +19,31 @@ class _MainScreenState extends State<MainScreen> {
   final List<Widget> _screens = [
     HomeScreen(),
     ExchangeRatesScreen(),
-    CurrencyChartScreen(),
+    ChartsScreen(),
   ];
 
   void _onItemTapped(int index) {
+    if (index == 3) {
+      _openServices(context);
+      return;
+    }
     setState(() => _selectedIndex = index);
+  }
+
+  void _openServices(BuildContext context) {
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        pageBuilder: (_, __, ___) => const ServicesScreen(),
+        transitionsBuilder: (_, animation, __, child) {
+          final offsetAnimation = Tween<Offset>(
+            begin: const Offset(1.0, 0.0),
+            end: Offset.zero,
+          ).animate(animation);
+
+          return SlideTransition(position: offsetAnimation, child: child);
+        },
+      ),
+    );
   }
 
   @override
@@ -56,11 +77,15 @@ class _MainScreenState extends State<MainScreen> {
               BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
               BottomNavigationBarItem(
                 icon: Icon(Icons.currency_exchange),
-                label: 'Convert',
+                label: 'Rates',
               ),
               BottomNavigationBarItem(
                 icon: Icon(Icons.show_chart),
                 label: 'Charts',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.more_horiz), // ⋯
+                label: 'More',
               ),
             ],
           ),
