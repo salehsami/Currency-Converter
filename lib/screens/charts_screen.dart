@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:http/http.dart' as http;
+import 'dart:math';
 
 class ChartsScreen extends StatefulWidget {
   const ChartsScreen({super.key});
@@ -15,10 +16,22 @@ String _formatDate(String date) {
   return '${parts[1]}-${parts[2]}'; // MM-DD
 }
 
+///////////////////////////////
+
+///////////////////
+
 class _ChartsScreenState extends State<ChartsScreen> {
-  // 🔐 RapidAPI credentials
-  static const String _apiKey =
-      '90bc081057msh6531ae8b9306df6p1c5751jsn3f26f55ea662';
+  // List of API keys
+  final List<String> _apiKeys = [
+    '90bc081057msh6531ae8b9306df6p1c5751jsn3f26f55ea662',
+    '09aa4c0ac5mshbdf6dd9ed64371fp113c4djsnc01436cfd34b',
+    'e04b4b2a08msh6ca4c006dc4c02cp174e14jsn4f4a03f54298',
+    '7f60b5c0d0msh7c64afa703fe5f5p1de40ejsn65bce8c31250',
+    '1848307b17msh5e6ee53d91f5c44p17e596jsne22210196884',
+  ];
+
+  late String _apiKey;
+
   static const String _host = 'currencyxchange.p.rapidapi.com';
 
   // 🌍 Currency data
@@ -103,6 +116,7 @@ class _ChartsScreenState extends State<ChartsScreen> {
   @override
   void initState() {
     super.initState();
+    _apiKey = _apiKeys[Random().nextInt(_apiKeys.length)];
     fetchChart();
   }
 
@@ -156,12 +170,29 @@ class _ChartsScreenState extends State<ChartsScreen> {
       '?start_date=$start&end_date=$end&base=$fromCurrency&symbols=$toCurrency',
     );
 
+    print('Fetching chart: $fromCurrency -> $toCurrency using $_apiKey');
+
     final response = await http.get(
       url,
       headers: {'X-RapidAPI-Key': _apiKey, 'X-RapidAPI-Host': _host},
     );
 
+    print('Response status: ${response.statusCode}');
+
+    if (response.statusCode != 200) {
+      print('API Error: ${response.statusCode} -> ${response.body}');
+      setState(() => loading = false);
+      return;
+    }
+
     final data = json.decode(response.body);
+
+    if (!data.containsKey('rates')) {
+      print('API response missing rates: $data');
+      setState(() => loading = false);
+      return;
+    }
+
     final rates = data['rates'] as Map<String, dynamic>;
 
     spots.clear();
