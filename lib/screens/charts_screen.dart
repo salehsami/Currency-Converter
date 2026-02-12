@@ -16,18 +16,11 @@ String _formatDate(String date) {
   return '${parts[1]}-${parts[2]}'; // MM-DD
 }
 
-///////////////////////////////
-
-///////////////////
-
 class _ChartsScreenState extends State<ChartsScreen> {
   // List of API keys
   final List<String> _apiKeys = [
     '90bc081057msh6531ae8b9306df6p1c5751jsn3f26f55ea662',
     '09aa4c0ac5mshbdf6dd9ed64371fp113c4djsnc01436cfd34b',
-    'e04b4b2a08msh6ca4c006dc4c02cp174e14jsn4f4a03f54298',
-    '7f60b5c0d0msh7c64afa703fe5f5p1de40ejsn65bce8c31250',
-    '1848307b17msh5e6ee53d91f5c44p17e596jsne22210196884',
   ];
 
   late String _apiKey;
@@ -156,60 +149,183 @@ class _ChartsScreenState extends State<ChartsScreen> {
     }
   }
 
+  // Future<void> fetchChart() async {
+  //   setState(() => loading = true);
+
+  //   final range = _getRange();
+  //   final start =
+  //       '${range.start.year}-${range.start.month.toString().padLeft(2, '0')}-${range.start.day.toString().padLeft(2, '0')}';
+  //   final end =
+  //       '${range.end.year}-${range.end.month.toString().padLeft(2, '0')}-${range.end.day.toString().padLeft(2, '0')}';
+
+  //   final url = Uri.parse(
+  //     'https://currencyxchange.p.rapidapi.com/api/timeseries'
+  //     '?start_date=$start&end_date=$end&base=$fromCurrency&symbols=$toCurrency',
+  //   );
+
+  //   print('Fetching chart: $fromCurrency -> $toCurrency using $_apiKey');
+
+  //   final response = await http.get(
+  //     url,
+  //     headers: {'X-RapidAPI-Key': _apiKey, 'X-RapidAPI-Host': _host},
+  //   );
+
+  //   print('Response status: ${response.statusCode}');
+
+  //   if (response.statusCode != 200) {
+  //     print('API Error: ${response.statusCode} -> ${response.body}');
+  //     setState(() => loading = false);
+  //     return;
+  //   }
+
+  //   final data = json.decode(response.body);
+
+  //   if (!data.containsKey('rates')) {
+  //     print('API response missing rates: $data');
+  //     setState(() => loading = false);
+  //     return;
+  //   }
+
+  //   final rates = data['rates'] as Map<String, dynamic>;
+
+  //   spots.clear();
+  //   dates.clear();
+
+  //   int i = 0;
+  //   for (final entry in rates.entries) {
+  //     final value = double.tryParse(entry.value[toCurrency].toString()) ?? 0;
+  //     spots.add(FlSpot(i.toDouble(), value));
+  //     dates.add(entry.key);
+  //     i++;
+  //   }
+
+  //   currentRate = spots.last.y;
+  //   percentageChange = ((spots.last.y - spots.first.y) / spots.first.y) * 100;
+
+  //   setState(() => loading = false);
+  // }
+
   Future<void> fetchChart() async {
     setState(() => loading = true);
 
-    final range = _getRange();
-    final start =
-        '${range.start.year}-${range.start.month.toString().padLeft(2, '0')}-${range.start.day.toString().padLeft(2, '0')}';
-    final end =
-        '${range.end.year}-${range.end.month.toString().padLeft(2, '0')}-${range.end.day.toString().padLeft(2, '0')}';
+    try {
+      final range = _getRange();
 
-    final url = Uri.parse(
-      'https://currencyxchange.p.rapidapi.com/api/timeseries'
-      '?start_date=$start&end_date=$end&base=$fromCurrency&symbols=$toCurrency',
-    );
+      final start =
+          '${range.start.year}-${range.start.month.toString().padLeft(2, '0')}-${range.start.day.toString().padLeft(2, '0')}';
 
-    print('Fetching chart: $fromCurrency -> $toCurrency using $_apiKey');
+      final end =
+          '${range.end.year}-${range.end.month.toString().padLeft(2, '0')}-${range.end.day.toString().padLeft(2, '0')}';
 
-    final response = await http.get(
-      url,
-      headers: {'X-RapidAPI-Key': _apiKey, 'X-RapidAPI-Host': _host},
-    );
+      final url = Uri.parse(
+        'https://currencyxchange.p.rapidapi.com/api/timeseries'
+        '?start_date=$start&end_date=$end&base=$fromCurrency&symbols=$toCurrency',
+      );
 
-    print('Response status: ${response.statusCode}');
+      print('Fetching chart: $fromCurrency -> $toCurrency using $_apiKey');
 
-    if (response.statusCode != 200) {
-      print('API Error: ${response.statusCode} -> ${response.body}');
+      final response = await http.get(
+        url,
+        headers: {'X-RapidAPI-Key': _apiKey, 'X-RapidAPI-Host': _host},
+      );
+
+      print('Response status: ${response.statusCode}');
+
+      if (response.statusCode != 200) {
+        print('API Error: ${response.statusCode} -> ${response.body}');
+        setState(() {
+          spots.clear();
+          dates.clear();
+          currentRate = 0;
+          percentageChange = 0;
+          loading = false;
+        });
+        return;
+      }
+
+      final data = json.decode(response.body);
+
+      if (data == null || !data.containsKey('rates')) {
+        print('API response missing rates: $data');
+        setState(() {
+          spots.clear();
+          dates.clear();
+          currentRate = 0;
+          percentageChange = 0;
+          loading = false;
+        });
+        return;
+      }
+
+      final rates = data['rates'] as Map<String, dynamic>;
+
+      if (rates.isEmpty) {
+        print('Rates are empty');
+        setState(() {
+          spots.clear();
+          dates.clear();
+          currentRate = 0;
+          percentageChange = 0;
+          loading = false;
+        });
+        return;
+      }
+
+      spots.clear();
+      dates.clear();
+
+      int i = 0;
+
+      final sortedKeys = rates.keys.toList()..sort();
+
+      for (final key in sortedKeys) {
+        final dayData = rates[key];
+
+        if (dayData == null || dayData[toCurrency] == null) {
+          continue;
+        }
+
+        final value = double.tryParse(dayData[toCurrency].toString());
+
+        if (value == null) continue;
+
+        spots.add(FlSpot(i.toDouble(), value));
+        dates.add(key);
+        i++;
+      }
+
+      // 🔐 CRITICAL SAFETY CHECK
+      if (spots.isEmpty) {
+        print('No valid chart points generated');
+        setState(() {
+          currentRate = 0;
+          percentageChange = 0;
+          loading = false;
+        });
+        return;
+      }
+
+      currentRate = spots.last.y;
+
+      if (spots.first.y != 0) {
+        percentageChange =
+            ((spots.last.y - spots.first.y) / spots.first.y) * 100;
+      } else {
+        percentageChange = 0;
+      }
+
       setState(() => loading = false);
-      return;
+    } catch (e) {
+      print('Chart fetch crash: $e');
+
+      setState(() {
+        spots.clear();
+        dates.clear();
+        currentRate = 0;
+        percentageChange = 0;
+        loading = false;
+      });
     }
-
-    final data = json.decode(response.body);
-
-    if (!data.containsKey('rates')) {
-      print('API response missing rates: $data');
-      setState(() => loading = false);
-      return;
-    }
-
-    final rates = data['rates'] as Map<String, dynamic>;
-
-    spots.clear();
-    dates.clear();
-
-    int i = 0;
-    for (final entry in rates.entries) {
-      final value = double.tryParse(entry.value[toCurrency].toString()) ?? 0;
-      spots.add(FlSpot(i.toDouble(), value));
-      dates.add(entry.key);
-      i++;
-    }
-
-    currentRate = spots.last.y;
-    percentageChange = ((spots.last.y - spots.first.y) / spots.first.y) * 100;
-
-    setState(() => loading = false);
   }
 
   void _swapCurrencies() {
@@ -373,6 +489,18 @@ class _ChartsScreenState extends State<ChartsScreen> {
   }
 
   Widget _chart() {
+    if (spots.isEmpty) {
+      return const SizedBox(
+        height: 300,
+        child: Center(
+          child: Text(
+            'No chart data available',
+            style: TextStyle(color: Colors.grey),
+          ),
+        ),
+      );
+    }
+
     final minY = spots.map((e) => e.y).reduce((a, b) => a < b ? a : b) * 0.995;
     final maxY = spots.map((e) => e.y).reduce((a, b) => a > b ? a : b) * 1.005;
 
@@ -453,27 +581,6 @@ class _ChartsScreenState extends State<ChartsScreen> {
 
             // ❌ RIGHT Y AXIS (disabled)
             rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-
-            // // ⬇ BOTTOM X AXIS (enabled)
-            // bottomTitles: AxisTitles(
-            //   sideTitles: SideTitles(
-            //     showTitles: true,
-            //     interval: (spots.length / 4).ceilToDouble(),
-            //     getTitlesWidget: (value, meta) {
-            //       final index = value.toInt();
-            //       if (index < 0 || index >= dates.length) {
-            //         return const SizedBox.shrink();
-            //       }
-            //       return Padding(
-            //         padding: const EdgeInsets.only(top: 6),
-            //         child: Text(
-            //           dates[index].substring(5), // MM-DD
-            //           style: const TextStyle(fontSize: 10, color: Colors.grey),
-            //         ),
-            //       );
-            //     },
-            //   ),
-            // ),
             bottomTitles: AxisTitles(
               sideTitles: SideTitles(
                 showTitles: true,
