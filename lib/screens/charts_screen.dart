@@ -1,632 +1,874 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:fl_chart/fl_chart.dart';
 import 'package:http/http.dart' as http;
-import 'dart:math';
+import 'dart:convert';
+import 'package:fl_chart/fl_chart.dart';
+import 'package:intl/intl.dart';
 
+const String _apiKey = '98cac62f0bc07bda25b98fb6';
+
+// ── Colour palette (matches your app) ────────────────────────────────────────
+const _navy = Color(0xFF0C243C);
+const _blue = Color(0xFF387AAE);
+const _darkBlue = Color(0xFF162836);
+const _surface = Color(0xFFF5F7FA);
+
+class _Currency {
+  final String code, name, flag;
+  const _Currency(this.code, this.name, this.flag);
+}
+
+// ── Master currency list ──────────────────────────────────────────────────────
+const List<_Currency> _kCurrencies = [
+  _Currency('USD', 'US Dollar', '🇺🇸'),
+  _Currency('EUR', 'Euro', '🇪🇺'),
+  _Currency('GBP', 'British Pound', '🇬🇧'),
+  _Currency('JPY', 'Japanese Yen', '🇯🇵'),
+  _Currency('CAD', 'Canadian Dollar', '🇨🇦'),
+  _Currency('AUD', 'Australian Dollar', '🇦🇺'),
+  _Currency('CHF', 'Swiss Franc', '🇨🇭'),
+  _Currency('CNY', 'Chinese Yuan', '🇨🇳'),
+  _Currency('INR', 'Indian Rupee', '🇮🇳'),
+  _Currency('ZAR', 'South African Rand', '🇿🇦'),
+  _Currency('NGN', 'Nigerian Naira', '🇳🇬'),
+  _Currency('KES', 'Kenyan Shilling', '🇰🇪'),
+  _Currency('GHS', 'Ghanaian Cedi', '🇬🇭'),
+  _Currency('EGP', 'Egyptian Pound', '🇪🇬'),
+  _Currency('ZMW', 'Zambian Kwacha', '🇿🇲'),
+  _Currency('ZWL', 'Zimbabwean Dollar', '🇿🇼'),
+];
+
+// ── Helper: date-points per range ─────────────────────────────────────────────
+List<DateTime> _buildDateRange(String range) {
+  final now = DateTime.now();
+  final List<DateTime> out = [];
+  switch (range) {
+    case '1W':
+      for (int i = 6; i >= 0; i--) out.add(now.subtract(Duration(days: i)));
+      break;
+    case '1M':
+      for (int i = 28; i >= 0; i -= 2) out.add(now.subtract(Duration(days: i)));
+      break;
+    case '3M':
+      for (int i = 84; i >= 0; i -= 7) out.add(now.subtract(Duration(days: i)));
+      break;
+    case '6M':
+      for (int i = 168; i >= 0; i -= 14)
+        out.add(now.subtract(Duration(days: i)));
+      break;
+    case '1Y':
+      for (int i = 360; i >= 0; i -= 30)
+        out.add(now.subtract(Duration(days: i)));
+      break;
+  }
+  return out;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 class ChartsScreen extends StatefulWidget {
   const ChartsScreen({super.key});
-
   @override
   State<ChartsScreen> createState() => _ChartsScreenState();
 }
 
-String _formatDate(String date) {
-  final parts = date.split('-');
-  return '${parts[1]}-${parts[2]}'; // MM-DD
-}
+class _ChartsScreenState extends State<ChartsScreen>
+    with SingleTickerProviderStateMixin {
+  _Currency _from = _kCurrencies[0]; // USD
+  _Currency _to = _kCurrencies[1]; // EUR
+  String _range = '1M';
 
-class _ChartsScreenState extends State<ChartsScreen> {
-  // List of API keys
-  final List<String> _apiKeys = [
-    '90bc081057msh6531ae8b9306df6p1c5751jsn3f26f55ea662',
-    '09aa4c0ac5mshbdf6dd9ed64371fp113c4djsnc01436cfd34b',
-  ];
+  List<FlSpot> _spots = [];
+  List<DateTime> _dates = [];
+  bool _loading = false;
+  String? _error;
 
-  late String _apiKey;
+  double _current = 0, _high = 0, _low = 0, _change = 0;
 
-  static const String _host = 'currencyxchange.p.rapidapi.com';
+  // For touch highlight
+  int _touchedIdx = -1;
 
-  // 🌍 Currency data
-  final Map<String, String> currencies = {
-    "AUD": "Australian Dollar",
-    "BRL": "Brazilian Real",
-    "CAD": "Canadian Dollar",
-    "CHF": "Swiss Franc",
-    "CNY": "Chinese Yuan",
-    "CZK": "Czech Koruna",
-    "DKK": "Danish Krone",
-    "EUR": "Euro",
-    "GBP": "British Pound",
-    "HKD": "Hong Kong Dollar",
-    "HUF": "Hungarian Forint",
-    "IDR": "Indonesian Rupiah",
-    "ILS": "Israeli Shekel",
-    "INR": "Indian Rupee",
-    "ISK": "Icelandic Krona",
-    "JPY": "Japanese Yen",
-    "KRW": "South Korean Won",
-    "MXN": "Mexican Peso",
-    "MYR": "Malaysian Ringgit",
-    "NOK": "Norwegian Krone",
-    "NZD": "New Zealand Dollar",
-    "PHP": "Philippine Peso",
-    "PLN": "Polish Zloty",
-    "RON": "Romanian Leu",
-    "SEK": "Swedish Krona",
-    "SGD": "Singapore Dollar",
-    "THB": "Thai Baht",
-    "TRY": "Turkish Lira",
-    "USD": "US Dollar",
-    "ZAR": "South African Rand",
-  };
-
-  final Map<String, String> flags = {
-    "AUD": "🇦🇺",
-    "BRL": "🇧🇷",
-    "CAD": "🇨🇦",
-    "CHF": "🇨🇭",
-    "CNY": "🇨🇳",
-    "CZK": "🇨🇿",
-    "DKK": "🇩🇰",
-    "EUR": "🇪🇺",
-    "GBP": "🇬🇧",
-    "HKD": "🇭🇰",
-    "HUF": "🇭🇺",
-    "IDR": "🇮🇩",
-    "ILS": "🇮🇱",
-    "INR": "🇮🇳",
-    "ISK": "🇮🇸",
-    "JPY": "🇯🇵",
-    "KRW": "🇰🇷",
-    "MXN": "🇲🇽",
-    "MYR": "🇲🇾",
-    "NOK": "🇳🇴",
-    "NZD": "🇳🇿",
-    "PHP": "🇵🇭",
-    "PLN": "🇵🇱",
-    "RON": "🇷🇴",
-    "SEK": "🇸🇪",
-    "SGD": "🇸🇬",
-    "THB": "🇹🇭",
-    "TRY": "🇹🇷",
-    "USD": "🇺🇸",
-    "ZAR": "🇿🇦",
-  };
-
-  String fromCurrency = 'GBP';
-  String toCurrency = 'HKD';
-  String selectedRange = '1M';
-
-  List<FlSpot> spots = [];
-  List<String> dates = [];
-
-  double currentRate = 0;
-  double percentageChange = 0;
-
-  bool loading = true;
+  late final AnimationController _fadeCtrl;
+  late final Animation<double> _fadeAnim;
 
   @override
   void initState() {
     super.initState();
-    _apiKey = _apiKeys[Random().nextInt(_apiKeys.length)];
-    fetchChart();
-  }
-
-  DateTimeRange _getRange() {
-    final now = DateTime.now();
-    switch (selectedRange) {
-      case '1D':
-        return DateTimeRange(
-          start: now.subtract(const Duration(days: 1)),
-          end: now,
-        );
-      case '1W':
-        return DateTimeRange(
-          start: now.subtract(const Duration(days: 7)),
-          end: now,
-        );
-      case '1M':
-        return DateTimeRange(
-          start: DateTime(now.year, now.month - 1, now.day),
-          end: now,
-        );
-      case '3M':
-        return DateTimeRange(
-          start: DateTime(now.year, now.month - 3, now.day),
-          end: now,
-        );
-      case '1Y':
-        return DateTimeRange(
-          start: DateTime(now.year - 1, now.month, now.day),
-          end: now,
-        );
-      default:
-        return DateTimeRange(
-          start: now.subtract(const Duration(days: 30)),
-          end: now,
-        );
-    }
-  }
-
-  // Future<void> fetchChart() async {
-  //   setState(() => loading = true);
-
-  //   final range = _getRange();
-  //   final start =
-  //       '${range.start.year}-${range.start.month.toString().padLeft(2, '0')}-${range.start.day.toString().padLeft(2, '0')}';
-  //   final end =
-  //       '${range.end.year}-${range.end.month.toString().padLeft(2, '0')}-${range.end.day.toString().padLeft(2, '0')}';
-
-  //   final url = Uri.parse(
-  //     'https://currencyxchange.p.rapidapi.com/api/timeseries'
-  //     '?start_date=$start&end_date=$end&base=$fromCurrency&symbols=$toCurrency',
-  //   );
-
-  //   print('Fetching chart: $fromCurrency -> $toCurrency using $_apiKey');
-
-  //   final response = await http.get(
-  //     url,
-  //     headers: {'X-RapidAPI-Key': _apiKey, 'X-RapidAPI-Host': _host},
-  //   );
-
-  //   print('Response status: ${response.statusCode}');
-
-  //   if (response.statusCode != 200) {
-  //     print('API Error: ${response.statusCode} -> ${response.body}');
-  //     setState(() => loading = false);
-  //     return;
-  //   }
-
-  //   final data = json.decode(response.body);
-
-  //   if (!data.containsKey('rates')) {
-  //     print('API response missing rates: $data');
-  //     setState(() => loading = false);
-  //     return;
-  //   }
-
-  //   final rates = data['rates'] as Map<String, dynamic>;
-
-  //   spots.clear();
-  //   dates.clear();
-
-  //   int i = 0;
-  //   for (final entry in rates.entries) {
-  //     final value = double.tryParse(entry.value[toCurrency].toString()) ?? 0;
-  //     spots.add(FlSpot(i.toDouble(), value));
-  //     dates.add(entry.key);
-  //     i++;
-  //   }
-
-  //   currentRate = spots.last.y;
-  //   percentageChange = ((spots.last.y - spots.first.y) / spots.first.y) * 100;
-
-  //   setState(() => loading = false);
-  // }
-
-  Future<void> fetchChart() async {
-    setState(() => loading = true);
-
-    try {
-      final range = _getRange();
-
-      final start =
-          '${range.start.year}-${range.start.month.toString().padLeft(2, '0')}-${range.start.day.toString().padLeft(2, '0')}';
-
-      final end =
-          '${range.end.year}-${range.end.month.toString().padLeft(2, '0')}-${range.end.day.toString().padLeft(2, '0')}';
-
-      final url = Uri.parse(
-        'https://currencyxchange.p.rapidapi.com/api/timeseries'
-        '?start_date=$start&end_date=$end&base=$fromCurrency&symbols=$toCurrency',
-      );
-
-      print('Fetching chart: $fromCurrency -> $toCurrency using $_apiKey');
-
-      final response = await http.get(
-        url,
-        headers: {'X-RapidAPI-Key': _apiKey, 'X-RapidAPI-Host': _host},
-      );
-
-      print('Response status: ${response.statusCode}');
-
-      if (response.statusCode != 200) {
-        print('API Error: ${response.statusCode} -> ${response.body}');
-        setState(() {
-          spots.clear();
-          dates.clear();
-          currentRate = 0;
-          percentageChange = 0;
-          loading = false;
-        });
-        return;
-      }
-
-      final data = json.decode(response.body);
-
-      if (data == null || !data.containsKey('rates')) {
-        print('API response missing rates: $data');
-        setState(() {
-          spots.clear();
-          dates.clear();
-          currentRate = 0;
-          percentageChange = 0;
-          loading = false;
-        });
-        return;
-      }
-
-      final rates = data['rates'] as Map<String, dynamic>;
-
-      if (rates.isEmpty) {
-        print('Rates are empty');
-        setState(() {
-          spots.clear();
-          dates.clear();
-          currentRate = 0;
-          percentageChange = 0;
-          loading = false;
-        });
-        return;
-      }
-
-      spots.clear();
-      dates.clear();
-
-      int i = 0;
-
-      final sortedKeys = rates.keys.toList()..sort();
-
-      for (final key in sortedKeys) {
-        final dayData = rates[key];
-
-        if (dayData == null || dayData[toCurrency] == null) {
-          continue;
-        }
-
-        final value = double.tryParse(dayData[toCurrency].toString());
-
-        if (value == null) continue;
-
-        spots.add(FlSpot(i.toDouble(), value));
-        dates.add(key);
-        i++;
-      }
-
-      // 🔐 CRITICAL SAFETY CHECK
-      if (spots.isEmpty) {
-        print('No valid chart points generated');
-        setState(() {
-          currentRate = 0;
-          percentageChange = 0;
-          loading = false;
-        });
-        return;
-      }
-
-      currentRate = spots.last.y;
-
-      if (spots.first.y != 0) {
-        percentageChange =
-            ((spots.last.y - spots.first.y) / spots.first.y) * 100;
-      } else {
-        percentageChange = 0;
-      }
-
-      setState(() => loading = false);
-    } catch (e) {
-      print('Chart fetch crash: $e');
-
-      setState(() {
-        spots.clear();
-        dates.clear();
-        currentRate = 0;
-        percentageChange = 0;
-        loading = false;
-      });
-    }
-  }
-
-  void _swapCurrencies() {
-    setState(() {
-      final temp = fromCurrency;
-      fromCurrency = toCurrency;
-      toCurrency = temp;
-    });
-    fetchChart();
-  }
-
-  void _showPicker(bool isFrom) {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder:
-          (_) => ListView(
-            padding: const EdgeInsets.all(16),
-            children:
-                currencies.entries.map((e) {
-                  return ListTile(
-                    leading: Text(
-                      flags[e.key]!,
-                      style: const TextStyle(fontSize: 22),
-                    ),
-                    title: Text(e.key),
-                    subtitle: Text(e.value),
-                    onTap: () {
-                      setState(() {
-                        if (isFrom) {
-                          fromCurrency = e.key;
-                        } else {
-                          toCurrency = e.key;
-                        }
-                      });
-                      Navigator.pop(context);
-                      fetchChart();
-                    },
-                  );
-                }).toList(),
-          ),
+    _fadeCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
     );
+    _fadeAnim = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeIn);
+    _fetch();
   }
 
   @override
+  void dispose() {
+    _fadeCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _fetch() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+      _spots = [];
+      _dates = [];
+      _touchedIdx = -1;
+    });
+    _fadeCtrl.reset();
+
+    final dates = _buildDateRange(_range);
+
+    try {
+      // Fire all requests concurrently
+      final futures =
+          dates.map((d) async {
+            final url =
+                'https://v6.exchangerate-api.com/v6/$_apiKey/history/${_from.code}/${d.year}/${d.month}/${d.day}';
+            try {
+              final res = await http.get(Uri.parse(url));
+              if (res.statusCode == 200) {
+                final body = jsonDecode(res.body);
+                if (body['result'] == 'success') {
+                  final rates =
+                      body['conversion_rates'] as Map<String, dynamic>;
+                  return (rates[_to.code] as num?)?.toDouble();
+                }
+              }
+            } catch (_) {}
+            return null;
+          }).toList();
+
+      final results = await Future.wait(futures);
+
+      final List<FlSpot> spots = [];
+      final List<DateTime> validDates = [];
+      final List<double> rawRates = [];
+
+      for (int i = 0; i < results.length; i++) {
+        final r = results[i];
+        if (r != null && r > 0) {
+          spots.add(FlSpot(spots.length.toDouble(), r));
+          validDates.add(dates[i]);
+          rawRates.add(r);
+        }
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _spots = spots;
+        _dates = validDates;
+        if (rawRates.isNotEmpty) {
+          _current = rawRates.last;
+          _high = rawRates.reduce((a, b) => a > b ? a : b);
+          _low = rawRates.reduce((a, b) => a < b ? a : b);
+          _change =
+              rawRates.length > 1
+                  ? ((rawRates.last - rawRates.first) / rawRates.first) * 100
+                  : 0;
+        }
+      });
+      _fadeCtrl.forward();
+    } catch (e) {
+      if (mounted) setState(() => _error = 'Failed to load chart data.\n$e');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  void _swap() {
+    setState(() {
+      final tmp = _from;
+      _from = _to;
+      _to = tmp;
+    });
+    _fetch();
+  }
+
+  // ── Build ──────────────────────────────────────────────────────────────────
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[100],
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        centerTitle: true,
-        title: const Text(
-          'Charts',
-          style: TextStyle(color: Colors.black, fontWeight: FontWeight.w600),
-        ),
-      ),
-      body:
-          loading
-              ? const Center(child: CircularProgressIndicator())
-              : SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        _currencyBox(fromCurrency, true),
-                        IconButton(
-                          icon: const Icon(Icons.swap_horiz),
-                          onPressed: _swapCurrencies,
-                        ),
-                        _currencyBox(toCurrency, false),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      '1 $fromCurrency = ${currentRate.toStringAsFixed(6)} $toCurrency',
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      '${percentageChange.toStringAsFixed(3)}% past ${selectedRange}',
-                      style: TextStyle(
-                        color:
-                            percentageChange >= 0 ? Colors.green : Colors.red,
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    _rangeSelector(),
-                    const SizedBox(height: 16),
-                    _chart(),
-                  ],
-                ),
+      backgroundColor: _navy,
+      body: Column(
+        children: [
+          // ── Dark top header ──
+          _buildTopHeader(),
+
+          // ── White card body ──
+          Expanded(
+            child: Container(
+              decoration: const BoxDecoration(
+                color: _surface,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
               ),
+              child:
+                  _loading
+                      ? const Center(
+                        child: CircularProgressIndicator(color: _blue),
+                      )
+                      : _error != null
+                      ? _buildErrorState()
+                      : _buildBody(),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _currencyBox(String code, bool isFrom) {
-    return Expanded(
-      child: InkWell(
-        onTap: () => _showPicker(isFrom),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+  // ── Top dark section: currency selector + live rate ───────────────────────
+  Widget _buildTopHeader() {
+    final positive = _change >= 0;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+      child: Column(
+        children: [
+          // Currency pair row
+          Row(
             children: [
-              Text(flags[code]!, style: const TextStyle(fontSize: 20)),
-              const SizedBox(width: 8),
-              Text(code, style: const TextStyle(fontWeight: FontWeight.w600)),
+              Expanded(child: _currencyPicker(_from, isFrom: true)),
+              _swapButton(),
+              Expanded(child: _currencyPicker(_to, isFrom: false)),
             ],
           ),
-        ),
-      ),
-    );
-  }
 
-  Widget _rangeSelector() {
-    const ranges = ['1D', '1W', '1M', '3M', '1Y'];
-    return Row(
-      children:
-          ranges.map((r) {
-            final selected = r == selectedRange;
-            return Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: GestureDetector(
-                onTap: () {
-                  setState(() => selectedRange = r);
-                  fetchChart();
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 8,
+          if (_current > 0) ...[
+            const SizedBox(height: 20),
+            // Live rate
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                Text(
+                  '1 ${_from.code}  =  ',
+                  style: const TextStyle(color: Colors.white54, fontSize: 15),
+                ),
+                Text(
+                  _current.toStringAsFixed(4),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 34,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.5,
                   ),
-                  decoration: BoxDecoration(
-                    color: selected ? const Color(0xFF387AAE) : Colors.white,
-                    borderRadius: BorderRadius.circular(20),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  _to.code,
+                  style: const TextStyle(color: Colors.white54, fontSize: 15),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            // Change badge
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+              decoration: BoxDecoration(
+                color: (positive ? Colors.green : Colors.red).withOpacity(0.18),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: (positive ? Colors.greenAccent : Colors.redAccent)
+                      .withOpacity(0.4),
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    positive
+                        ? Icons.arrow_upward_rounded
+                        : Icons.arrow_downward_rounded,
+                    color: positive ? Colors.greenAccent : Colors.redAccent,
+                    size: 14,
                   ),
-                  child: Text(
-                    r,
+                  const SizedBox(width: 4),
+                  Text(
+                    '${positive ? '+' : ''}${_change.toStringAsFixed(2)}%  this period',
                     style: TextStyle(
-                      color: selected ? Colors.white : Colors.black,
+                      color: positive ? Colors.greenAccent : Colors.redAccent,
+                      fontSize: 13,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
-                ),
+                ],
               ),
-            );
-          }).toList(),
+            ),
+          ],
+        ],
+      ),
     );
   }
 
-  Widget _chart() {
-    if (spots.isEmpty) {
-      return const SizedBox(
-        height: 300,
-        child: Center(
-          child: Text(
-            'No chart data available',
-            style: TextStyle(color: Colors.grey),
+  Widget _swapButton() {
+    return GestureDetector(
+      onTap: _swap,
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 10),
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [_blue, Color(0xFF1E5C8B)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
           ),
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [
+            BoxShadow(
+              color: _blue.withOpacity(0.4),
+              blurRadius: 8,
+              offset: const Offset(0, 3),
+            ),
+          ],
         ),
-      );
-    }
+        child: const Icon(
+          Icons.swap_horiz_rounded,
+          color: Colors.white,
+          size: 22,
+        ),
+      ),
+    );
+  }
 
-    final minY = spots.map((e) => e.y).reduce((a, b) => a < b ? a : b) * 0.995;
-    final maxY = spots.map((e) => e.y).reduce((a, b) => a > b ? a : b) * 1.005;
-
+  Widget _currencyPicker(_Currency selected, {required bool isFrom}) {
     return Container(
-      height: 300,
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withOpacity(0.15)),
+      ),
+      child: DropdownButton<_Currency>(
+        value: selected,
+        isExpanded: true,
+        underline: const SizedBox(),
+        dropdownColor: const Color(0xFF162836),
+        icon: const Icon(
+          Icons.keyboard_arrow_down_rounded,
+          color: Colors.white54,
+          size: 18,
+        ),
+        style: const TextStyle(color: Colors.white),
+        items:
+            _kCurrencies
+                .map(
+                  (c) => DropdownMenuItem(
+                    value: c,
+                    child: Row(
+                      children: [
+                        Text(c.flag, style: const TextStyle(fontSize: 18)),
+                        const SizedBox(width: 8),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              c.code,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
+                            ),
+                            Text(
+                              c.name,
+                              style: const TextStyle(
+                                color: Colors.white54,
+                                fontSize: 10,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+                .toList(),
+        onChanged: (val) {
+          if (val == null) return;
+          setState(() {
+            if (isFrom)
+              _from = val;
+            else
+              _to = val;
+          });
+          _fetch();
+        },
+      ),
+    );
+  }
+
+  // ── Scrollable body: range tabs + chart + stats ───────────────────────────
+  Widget _buildBody() {
+    return FadeTransition(
+      opacity: _fadeAnim,
+      child: SingleChildScrollView(
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
+        child: Column(
+          children: [
+            _buildRangeTabs(),
+            const SizedBox(height: 16),
+            _buildChartCard(),
+            const SizedBox(height: 16),
+            _buildStatsRow(),
+            const SizedBox(height: 16),
+            _buildRateInfoCard(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Time range pill selector ───────────────────────────────────────────────
+  Widget _buildRangeTabs() {
+    return Container(
+      padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children:
+            ['1W', '1M', '3M', '6M', '1Y'].map((r) {
+              final active = r == _range;
+              return Expanded(
+                child: GestureDetector(
+                  onTap: () {
+                    if (r == _range) return;
+                    setState(() => _range = r);
+                    _fetch();
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeInOut,
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    decoration: BoxDecoration(
+                      color: active ? _blue : Colors.transparent,
+                      borderRadius: BorderRadius.circular(10),
+                      boxShadow:
+                          active
+                              ? [
+                                BoxShadow(
+                                  color: _blue.withOpacity(0.35),
+                                  blurRadius: 6,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ]
+                              : [],
+                    ),
+                    child: Text(
+                      r,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: active ? Colors.white : Colors.grey[500],
+                        fontWeight: active ? FontWeight.bold : FontWeight.w500,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+      ),
+    );
+  }
+
+  // ── fl_chart line chart ───────────────────────────────────────────────────
+  Widget _buildChartCard() {
+    if (_spots.isEmpty) {
+      return _emptyChart();
+    }
+
+    final positive = _change >= 0;
+    final lineColor = positive ? _blue : const Color(0xFFE74C3C);
+    final gradientStart =
+        positive
+            ? _blue.withOpacity(0.28)
+            : const Color(0xFFE74C3C).withOpacity(0.22);
+    final minY = (_low * 0.9985);
+    final maxY = (_high * 1.0015);
+
+    // Determine label format from range
+    String labelFmt =
+        _range == '1W' ? 'EEE' : (_range == '1Y' ? 'MMM' : 'MMM d');
+    // Show ~4 bottom labels
+    final double labelInterval = (_spots.length / 4).ceilToDouble();
+
+    return Container(
+      height: 270,
+      padding: const EdgeInsets.fromLTRB(4, 20, 16, 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 14,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: LineChart(
         LineChartData(
-          lineTouchData: LineTouchData(
-            enabled: true,
-            handleBuiltInTouches: true,
-            touchTooltipData: LineTouchTooltipData(
-              tooltipBgColor: Colors.black87,
-              getTooltipItems: (touchedSpots) {
-                return touchedSpots.map((spot) {
-                  return LineTooltipItem(
-                    spot.y.toStringAsFixed(4),
-                    const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  );
-                }).toList();
-              },
-            ),
-            getTouchedSpotIndicator: (barData, spotIndexes) {
-              return spotIndexes.map((index) {
-                return TouchedSpotIndicatorData(
-                  FlLine(color: Colors.red.withOpacity(0.4), strokeWidth: 1.5),
-                  FlDotData(
-                    show: true,
-                    getDotPainter: (spot, percent, bar, index) {
-                      return FlDotCirclePainter(
-                        radius: 5,
-                        color: Colors.red, // 🔴 red point
-                        strokeWidth: 2,
-                        strokeColor: Colors.white,
-                      );
-                    },
-                  ),
-                );
-              }).toList();
-            },
-          ),
           minY: minY,
           maxY: maxY,
+          clipData: const FlClipData.all(),
+
+          // ── Touch ──
+          lineTouchData: LineTouchData(
+            handleBuiltInTouches: true,
+            touchCallback: (event, response) {
+              setState(() {
+                if (response?.lineBarSpots != null &&
+                    response!.lineBarSpots!.isNotEmpty) {
+                  _touchedIdx = response.lineBarSpots!.first.x.toInt();
+                } else {
+                  _touchedIdx = -1;
+                }
+              });
+            },
+            touchTooltipData: LineTouchTooltipData(
+              getTooltipColor: (_) => _navy,
+              tooltipBorderRadius: BorderRadius.circular(10),
+              tooltipPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 8,
+              ),
+              getTooltipItems:
+                  (spots) =>
+                      spots.map((s) {
+                        final idx = s.x.toInt();
+                        final date = idx < _dates.length ? _dates[idx] : null;
+                        return LineTooltipItem(
+                          date != null
+                              ? '${DateFormat('d MMM yyyy').format(date)}\n'
+                              : '',
+                          const TextStyle(
+                            color: Colors.white54,
+                            fontSize: 11,
+                            height: 1.6,
+                          ),
+                          children: [
+                            TextSpan(
+                              text: s.y.toStringAsFixed(4),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 16,
+                              ),
+                            ),
+                          ],
+                        );
+                      }).toList(),
+            ),
+          ),
+
+          // ── Grid ──
           gridData: FlGridData(
             show: true,
-            drawVerticalLine: false, // ❌ remove vertical grid
-            drawHorizontalLine: true,
-            horizontalInterval: (maxY - minY) / 4,
-            getDrawingHorizontalLine: (value) {
-              return FlLine(
-                color: Colors.grey.withOpacity(0.15), // very subtle
-                strokeWidth: 1,
-              );
-            },
+            drawVerticalLine: false,
+            getDrawingHorizontalLine:
+                (_) => FlLine(
+                  color: Colors.grey.withOpacity(0.12),
+                  strokeWidth: 1,
+                  dashArray: [4, 4],
+                ),
           ),
+          borderData: FlBorderData(show: false),
+
+          // ── Axes ──
           titlesData: FlTitlesData(
-            // ⬅ LEFT Y AXIS (only one visible)
+            rightTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
+            topTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
             leftTitles: AxisTitles(
               sideTitles: SideTitles(
                 showTitles: true,
-                reservedSize: 46,
-                interval: (maxY - minY) / 4,
-                getTitlesWidget: (value, meta) {
-                  return Text(
-                    value.toStringAsFixed(2),
-                    style: const TextStyle(fontSize: 11, color: Colors.grey),
-                  );
-                },
+                reservedSize: 54,
+                getTitlesWidget:
+                    (v, _) => Padding(
+                      padding: const EdgeInsets.only(right: 4),
+                      child: Text(
+                        v.toStringAsFixed(
+                          v >= 100
+                              ? 1
+                              : v >= 10
+                              ? 2
+                              : 4,
+                        ),
+                        style: TextStyle(color: Colors.grey[400], fontSize: 10),
+                        textAlign: TextAlign.right,
+                      ),
+                    ),
               ),
             ),
-
-            // ❌ RIGHT Y AXIS (disabled)
-            rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
             bottomTitles: AxisTitles(
               sideTitles: SideTitles(
                 showTitles: true,
-                reservedSize: 32,
-                interval: (spots.length / 4).ceilToDouble(), // 👈 KEY FIX
-                getTitlesWidget: (value, meta) {
-                  final index = value.round();
-
-                  if (index < 0 || index >= dates.length) {
-                    return const SizedBox.shrink();
+                reservedSize: 26,
+                interval: labelInterval,
+                getTitlesWidget: (v, _) {
+                  final i = v.toInt();
+                  if (i < 0 || i >= _dates.length) {
+                    return const SizedBox();
                   }
-
                   return Padding(
-                    padding: const EdgeInsets.only(top: 8),
+                    padding: const EdgeInsets.only(top: 4),
                     child: Text(
-                      _formatDate(dates[index]),
-                      style: const TextStyle(fontSize: 10, color: Colors.grey),
+                      DateFormat(labelFmt).format(_dates[i]),
+                      style: TextStyle(color: Colors.grey[400], fontSize: 10),
                     ),
                   );
                 },
               ),
             ),
-
-            // ❌ TOP X AXIS (disabled)
-            topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
           ),
 
-          borderData: FlBorderData(show: false),
+          // ── Line ──
           lineBarsData: [
             LineChartBarData(
-              spots: spots,
+              spots: _spots,
               isCurved: true,
               curveSmoothness: 0.25,
-              color: const Color(0xFF387AAE),
+              color: lineColor,
               barWidth: 2.8,
               isStrokeCapRound: true,
-              dotData: FlDotData(show: false),
+              dotData: FlDotData(
+                show: true,
+                checkToShowDot: (spot, _) => spot.x.toInt() == _touchedIdx,
+                getDotPainter:
+                    (spot, _, __, ___) => FlDotCirclePainter(
+                      radius: 5,
+                      color: Colors.white,
+                      strokeWidth: 2.5,
+                      strokeColor: lineColor,
+                    ),
+              ),
               belowBarData: BarAreaData(
                 show: true,
                 gradient: LinearGradient(
+                  colors: [gradientStart, Colors.transparent],
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  colors: [
-                    const Color(0xFF387AAE).withOpacity(0.25),
-                    Colors.transparent,
-                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeInOut,
+      ),
+    );
+  }
+
+  Widget _emptyChart() => Container(
+    height: 200,
+    alignment: Alignment.center,
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(20),
+    ),
+    child: Text('No data available', style: TextStyle(color: Colors.grey[400])),
+  );
+
+  // ── Stats row ─────────────────────────────────────────────────────────────
+  Widget _buildStatsRow() {
+    return Row(
+      children: [
+        _statCard(
+          'Period High',
+          _high.toStringAsFixed(4),
+          Colors.green[700]!,
+          Icons.arrow_upward_rounded,
+        ),
+        const SizedBox(width: 10),
+        _statCard(
+          'Period Low',
+          _low.toStringAsFixed(4),
+          Colors.red[600]!,
+          Icons.arrow_downward_rounded,
+        ),
+        const SizedBox(width: 10),
+        _statCard(
+          'Change',
+          '${_change >= 0 ? '+' : ''}${_change.toStringAsFixed(2)}%',
+          _change >= 0 ? Colors.green[700]! : Colors.red[600]!,
+          _change >= 0
+              ? Icons.trending_up_rounded
+              : Icons.trending_down_rounded,
+        ),
+      ],
+    );
+  }
+
+  Widget _statCard(String label, String value, Color color, IconData icon) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, size: 14, color: color),
+                const SizedBox(width: 4),
+                Flexible(
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      color: Colors.grey[500],
+                      fontSize: 10,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              value,
+              style: TextStyle(
+                color: color,
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.3,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Info/hint card at the bottom ──────────────────────────────────────────
+  Widget _buildRateInfoCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [_navy, _darkBlue],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: _navy.withOpacity(0.35),
+            blurRadius: 14,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(
+              Icons.info_outline_rounded,
+              color: Colors.white70,
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${_from.flag} ${_from.code}  →  ${_to.flag} ${_to.code}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  'Live market rate - Updates on every refresh',
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.5),
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          GestureDetector(
+            onTap: _fetch,
+            child: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: _blue,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(
+                Icons.refresh_rounded,
+                color: Colors.white,
+                size: 18,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Error state ───────────────────────────────────────────────────────────
+  Widget _buildErrorState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.cloud_off_rounded, size: 54, color: Colors.grey),
+            const SizedBox(height: 14),
+            Text(
+              _error ?? 'Something went wrong.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.grey, fontSize: 14),
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton.icon(
+              onPressed: _fetch,
+              icon: const Icon(Icons.refresh_rounded, size: 18),
+              label: const Text('Try again'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _blue,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
                 ),
               ),
             ),
